@@ -40,6 +40,9 @@
     }
     button {
       cursor: pointer;
+      /* 버튼 내에서 터치영역 구분을 위해 충분한 width 확보 */
+      width: 50%;
+      height: 100%;
     }
   </style>
 </head>
@@ -69,14 +72,14 @@
     </table>
   </div>
   
-  <!-- Firebase SDK와 함께 점수표 기능 스크립트 -->
+  <!-- Firebase SDK 및 앱 초기화, Analytics, Realtime Database 사용 -->
   <script type="module">
-    // Firebase 관련 모듈 임포트 (Analytics 및 Realtime Database)
+    // Firebase 관련 모듈 임포트
     import { initializeApp } from "https://www.gstatic.com/firebasejs/11.3.0/firebase-app.js";
     import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.3.0/firebase-analytics.js";
     import { getDatabase, ref, set, get, onValue, update } from "https://www.gstatic.com/firebasejs/11.3.0/firebase-database.js";
     
-    // Firebase 구성 (사용자 제공 구성 정보)
+    // Firebase 구성 (사용자 제공 설정 값)
     const firebaseConfig = {
       apiKey: "AIzaSyDeMtBmOwrkE1iW0I_G2TyB0ZIquOYIz2w",
       authDomain: "scoreboard-team-game.firebaseapp.com",
@@ -114,7 +117,7 @@
       await set(teamsRef, initialTeams);
     }
 
-    // 점수 업데이트 함수 (해당 게임 버튼 클릭 시 100점씩 증가)
+    // 점수 업데이트 함수 (Firebase 업데이트)
     async function updateScore(teamId, gameIndex, newScore) {
       const teamRef = ref(db, `teams/${teamId}`);
       const snapshot = await get(teamRef);
@@ -158,7 +161,7 @@
         team.rank = rankMap[team.id];
       });
 
-      // 정렬 조건에 따라 배열 정렬: manualSort가 활성화되면 순위 기준 정렬, 아니면 팀 번호 순 정렬
+      // 정렬 조건에 따라 배열 정렬: manualSort 활성화 시 순위 기준, 아니면 팀 번호 순
       if (manualSort) {
         if (sortOrder === "asc") {
           teams.sort((a, b) => a.rank - b.rank);
@@ -190,16 +193,30 @@
         nameInput.onchange = (e) => updateTeamName(team.id, e.target.value);
         nameCell.appendChild(nameInput);
 
-        // 게임 점수 셀: 버튼 클릭 시 100점씩 증가
+        // 게임 점수 셀: 각 셀에 터치(클릭) 이벤트를 추가하여 좌측/우측 터치 구분
         team.scores.forEach((score, gameIndex) => {
           const cell = row.insertCell();
           const scoreButton = document.createElement("button");
+          // 버튼은 터치 영역 전체를 차지
+          scoreButton.style.width = "100%";
+          scoreButton.style.height = "100%";
           scoreButton.textContent = score;
-          scoreButton.onclick = () => {
+          scoreButton.addEventListener("click", (e) => {
+            // 버튼의 위치와 너비를 구한 후, 클릭 위치가 버튼의 좌측/우측 중 어디인지 확인
+            const rect = scoreButton.getBoundingClientRect();
+            const clickX = e.clientX - rect.left;
+            const halfWidth = rect.width / 2;
             let currentScore = parseInt(scoreButton.textContent) || 0;
-            let newScore = currentScore + 100;
+            let newScore;
+            if (clickX > halfWidth) {
+              // 오른쪽 터치: 100점 증가
+              newScore = currentScore + 100;
+            } else {
+              // 왼쪽 터치: 100점 감소
+              newScore = currentScore - 100;
+            }
             updateScore(team.id, gameIndex, newScore);
-          };
+          });
           cell.appendChild(scoreButton);
         });
 
