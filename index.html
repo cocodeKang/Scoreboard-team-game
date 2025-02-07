@@ -9,40 +9,59 @@
       font-family: Arial, sans-serif;
       text-align: center;
     }
-    /* 가로 스크롤을 위한 컨테이너 */
-    .table-container {
-      overflow-x: auto;
-    }
+    /* 테이블 레이아웃을 고정하여 열 비율을 일정하게 유지 */
     table {
       width: 90%;
       margin: 20px auto;
       border-collapse: collapse;
+      table-layout: fixed;
     }
     th, td {
       border: 1px solid #ddd;
-      padding: 10px;
+      padding: 5px;
       text-align: center;
-      white-space: nowrap;
+      /* 내용이 넘치면 자동 줄바꿈 */
+      word-wrap: break-word;
     }
     th {
       background-color: #f4f4f4;
       cursor: pointer;
+      font-size: 1rem;
     }
-    /* 팀 이름 열 고정 */
+    /* colgroup으로 각 열의 비율 지정 */
+    /* 순서: 순위(8%), 팀 이름(10%), 게임 7열(7×10%=70%), 합계(12%) */
+    /* 총합: 8+10+70+12 = 100% */
+    /* 팀 이름 열의 크기를 기존보다 50% 줄인 효과 */
+    /* (원래 지정하지 않으면 브라우저 기본값을 사용하지만 여기서는 20%라고 가정하고 50% 축소하여 10%로 지정) */
+    
+    /* 점수 버튼 스타일: 각 셀의 버튼 크기를 통일 */
+    .score-button {
+      width: 80px;
+      height: 50px;
+      font-size: 1.2rem;
+      margin: 0;
+      padding: 0;
+    }
+    /* 팀 이름 입력란을 셀에 꽉 차도록 (padding 조정) */
+    .team-name-input {
+      width: 90%;
+      font-size: 1rem;
+      box-sizing: border-box;
+    }
+    /* 초기화 버튼 스타일 조정 */
+    #resetButton {
+      width: 120px;
+      padding: 5px 10px;
+      font-size: 1rem;
+      margin: 10px;
+    }
+    /* 팀 이름 열(sticky-col) 고정 및 폭 지정 */
     .sticky-col {
       position: sticky;
       left: 0;
-      background: white;
+      background: #fff;
       z-index: 2;
-    }
-    thead th.sticky-col {
-      z-index: 3;
-    }
-    button {
-      cursor: pointer;
-      /* 버튼 내에서 터치영역 구분을 위해 충분한 width 확보 */
-      width: 50%;
-      height: 100%;
+      /* colgroup에서 지정한 너비에 맞춰 별도 width 지정 필요시 사용 */
     }
   </style>
 </head>
@@ -51,11 +70,24 @@
   <button id="resetButton">초기화</button>
   <div class="table-container">
     <table id="scoreTable">
+      <!-- colgroup을 사용하여 각 열의 비율 지정 -->
+      <colgroup>
+        <col style="width: 8%;">   <!-- 순위 -->
+        <col style="width: 10%;">  <!-- 팀 이름 (축소됨) -->
+        <col style="width: 10%;">  <!-- 게임1: OX퀴즈 -->
+        <col style="width: 10%;">  <!-- 게임2: 안숨은그림찾기 -->
+        <col style="width: 10%;">  <!-- 게임3: 황금 열쇠를 찾아라 -->
+        <col style="width: 10%;">  <!-- 게임4: 3x3게임 -->
+        <col style="width: 10%;">  <!-- 게임5: 줄줄이 말해요 -->
+        <col style="width: 10%;">  <!-- 게임6: 핑거게임 -->
+        <col style="width: 10%;">  <!-- 게임7: 막판 뒤집기 -->
+        <col style="width: 12%;">  <!-- 합계 -->
+      </colgroup>
       <thead>
         <tr>
           <th id="rankHeader" rowspan="2">순위</th>
           <th rowspan="2" class="sticky-col">팀 이름</th>
-          <th colspan="6">게임</th>
+          <th colspan="7">게임</th>
           <th rowspan="2">합계</th>
         </tr>
         <tr>
@@ -102,7 +134,7 @@
     let manualSort = false;
     let sortOrder = "asc";
 
-    // 5팀 초기화 (각 팀은 6개 게임 점수 사용)
+    // 5팀 초기화 (각 팀은 7개 게임 점수 사용)
     async function initializeTeams() {
       const initialTeams = {};
       for (let i = 1; i <= 5; i++) {
@@ -110,7 +142,7 @@
         initialTeams[teamId] = {
           id: teamId,
           name: `Team ${i}`,
-          scores: [0, 0, 0, 0, 0, 0],
+          scores: [0, 0, 0, 0, 0, 0, 0],  // 7게임 (마지막: 막판 뒤집기)
           total: 0
         };
       }
@@ -164,11 +196,7 @@
 
       // 정렬 조건에 따라 배열 정렬: manualSort 활성화 시 순위 기준, 아니면 팀 번호 순
       if (manualSort) {
-        if (sortOrder === "asc") {
-          teams.sort((a, b) => a.rank - b.rank);
-        } else {
-          teams.sort((a, b) => b.rank - a.rank);
-        }
+        teams.sort((a, b) => sortOrder === "asc" ? a.rank - b.rank : b.rank - a.rank);
       } else {
         teams.sort((a, b) => {
           const numA = parseInt(a.id.replace("team", ""));
@@ -191,19 +219,17 @@
         const nameInput = document.createElement("input");
         nameInput.type = "text";
         nameInput.value = team.name;
+        nameInput.classList.add("team-name-input");
         nameInput.onchange = (e) => updateTeamName(team.id, e.target.value);
         nameCell.appendChild(nameInput);
 
-        // 게임 점수 셀: 각 셀에 터치(클릭) 이벤트를 추가하여 좌측/우측 터치 구분
+        // 게임 점수 셀: 각 셀에 터치(클릭) 이벤트를 추가하여 좌측/우측 터치에 따라 100점씩 증감
         team.scores.forEach((score, gameIndex) => {
           const cell = row.insertCell();
           const scoreButton = document.createElement("button");
-          // 버튼은 터치 영역 전체를 차지
-          scoreButton.style.width = "100%";
-          scoreButton.style.height = "100%";
+          scoreButton.classList.add("score-button");
           scoreButton.textContent = score;
           scoreButton.addEventListener("click", (e) => {
-            // 버튼의 위치와 너비를 구한 후, 클릭 위치가 버튼의 좌측/우측 중 어디인지 확인
             const rect = scoreButton.getBoundingClientRect();
             const clickX = e.clientX - rect.left;
             const halfWidth = rect.width / 2;
@@ -231,8 +257,7 @@
     function updateTable() {
       onValue(teamsRef, (snapshot) => {
         if (snapshot.exists()) {
-          const data = snapshot.val();
-          renderTable(data);
+          renderTable(snapshot.val());
         } else {
           console.log("Firebase에 팀 데이터가 없습니다.");
         }
