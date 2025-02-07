@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>팀 게임 점수표</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+    }
+    /* 가로 스크롤을 위한 컨테이너 */
+    .table-container {
+      overflow-x: auto;
+    }
+    table {
+      width: 90%;
+      margin: 20px auto;
+      border-collapse: collapse;
+    }
+    th, td {
+      border: 1px solid #ddd;
+      padding: 10px;
+      text-align: center;
+      white-space: nowrap;
+    }
+    th {
+      background-color: #f4f4f4;
+      cursor: pointer;
+    }
+    /* 팀 이름 열 고정 */
+    .sticky-col {
+      position: sticky;
+      left: 0;
+      background: white;
+      z-index: 2;
+    }
+    thead th.sticky-col {
+      z-index: 3;
+    }
+    button {
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <h1>팀 게임 점수표</h1>
+  <button id="resetButton">초기화</button>
+  <div class="table-container">
+    <table id="scoreTable">
+      <thead>
+        <tr>
+          <th id="rankHeader" rowspan="2">순위</th>
+          <th rowspan="2" class="sticky-col">팀 이름</th>
+          <th colspan="6">게임</th>
+          <th rowspan="2">합계</th>
+        </tr>
+        <tr>
+          <th>OX퀴즈</th>
+          <th>안숨은그림찾기</th>
+          <th>황금 열쇠를 찾아라</th>
+          <th>3x3게임</th>
+          <th>줄줄이 말해요</th>
+          <th>핑거게임</th>
+        </tr>
+      </thead>
+      <tbody>
+      </tbody>
+    </table>
+  </div>
+  
+  <!-- Firebase SDK와 함께 점수표 기능 스크립트 -->
+  <script type="module">
+    // Firebase 관련 모듈 임포트 (Analytics 및 Realtime Database)
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.3.0/firebase-app.js";
+    import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.3.0/firebase-analytics.js";
+    import { getDatabase, ref, set, get, onValue, update } from "https://www.gstatic.com/firebasejs/11.3.0/firebase-database.js";
+    
+    // Firebase 구성 (사용자 제공 구성 정보)
+    const firebaseConfig = {
+      apiKey: "AIzaSyDeMtBmOwrkE1iW0I_G2TyB0ZIquOYIz2w",
+      authDomain: "scoreboard-team-game.firebaseapp.com",
+      databaseURL: "https://scoreboard-team-game-default-rtdb.firebaseio.com",
+      projectId: "scoreboard-team-game",
+      storageBucket: "scoreboard-team-game.firebasestorage.app",
+      messagingSenderId: "327284848397",
+      appId: "1:327284848397:web:415c1dc919075bb14b6244",
+      measurementId: "G-1Y4LFPJC6H"
+    };
+
+    // Firebase 초기화
+    const app = initializeApp(firebaseConfig);
+    const analytics = getAnalytics(app);
+    const db = getDatabase(app);
+    const teamsRef = ref(db, "teams");
+
+    // 전역 변수: manualSort가 false이면 기본(팀 아이디 순), true이면 순위 기준 정렬
+    let manualSort = false;
+    let sortOrder = "asc";
+
+    // 5팀 초기화 (각 팀은 6개 게임 점수 사용)
+    async function initializeTeams() {
+      const initialTeams = {};
+      for (let i = 1; i <= 5; i++) {
+        const teamId = `team${i}`;
+        initialTeams[teamId] = {
+          id: teamId,
+          name: `Team ${i}`,
+          scores: [0, 0, 0, 0, 0, 0],
+          total: 0
+        };
+      }
+      console.log("팀 데이터 초기화:", initialTeams);
+      await set(teamsRef, initialTeams);
+    }
+
+    // 점수 업데이트 함수 (해당 게임 버튼 클릭 시 100점씩 증가)
+    async function updateScore(teamId, gameIndex, newScore) {
+      const teamRef = ref(db, `teams/${teamId}`);
+      const snapshot = await get(teamRef);
+      if (snapshot.exists()) {
+        const team = snapshot.val();
+        team.scores[gameIndex] = parseInt(newScore) || 0;
+        team.total = team.scores.reduce((a, b) => a + b, 0);
+        console.log(`팀 ${teamId}의 게임 ${gameIndex + 1} 점수 업데이트:`, team.scores[gameIndex]);
+        await update(teamRef, team);
+      }
+    }
+
+    // 팀 이름 업데이트 함수
+    async function updateTeamName(teamId, newName) {
+      const teamRef = ref(db, `teams/${teamId}`);
+      console.log(`팀 ${teamId}의 이름 업데이트:`, newName);
+      await update(teamRef, { name: newName });
+    }
+
+    // 테이블 렌더링 함수
+    function renderTable(teamsData) {
+      const tbody = document.querySelector("#scoreTable tbody");
+      tbody.innerHTML = "";
+      let teams = Object.values(teamsData);
+
+      // 총점 내림차순 정렬 후 순위 계산
+      let sortedForRank = [...teams].sort((a, b) => b.total - a.total);
+      let currentRank = 0;
+      let previousTotal = null;
+      const rankMap = {};
+      sortedForRank.forEach((team, index) => {
+        if (team.total === previousTotal) {
+          rankMap[team.id] = currentRank;
+        } else {
+          currentRank = index + 1;
+          rankMap[team.id] = currentRank;
+          previousTotal = team.total;
+        }
+      });
+      teams.forEach(team => {
+        team.rank = rankMap[team.id];
+      });
+
+      // 정렬 조건에 따라 배열 정렬: manualSort가 활성화되면 순위 기준 정렬, 아니면 팀 번호 순 정렬
+      if (manualSort) {
+        if (sortOrder === "asc") {
+          teams.sort((a, b) => a.rank - b.rank);
+        } else {
+          teams.sort((a, b) => b.rank - a.rank);
+        }
+      } else {
+        teams.sort((a, b) => {
+          const numA = parseInt(a.id.replace("team", ""));
+          const numB = parseInt(b.id.replace("team", ""));
+          return numA - numB;
+        });
+      }
+
+      // 각 팀별 행 생성
+      teams.forEach(team => {
+        const row = tbody.insertRow();
+
+        // 순위 셀
+        const rankCell = row.insertCell();
+        rankCell.textContent = team.rank;
+
+        // 팀 이름 셀 (sticky)
+        const nameCell = row.insertCell();
+        nameCell.classList.add("sticky-col");
+        const nameInput = document.createElement("input");
+        nameInput.type = "text";
+        nameInput.value = team.name;
+        nameInput.onchange = (e) => updateTeamName(team.id, e.target.value);
+        nameCell.appendChild(nameInput);
+
+        // 게임 점수 셀: 버튼 클릭 시 100점씩 증가
+        team.scores.forEach((score, gameIndex) => {
+          const cell = row.insertCell();
+          const scoreButton = document.createElement("button");
+          scoreButton.textContent = score;
+          scoreButton.onclick = () => {
+            let currentScore = parseInt(scoreButton.textContent) || 0;
+            let newScore = currentScore + 100;
+            updateScore(team.id, gameIndex, newScore);
+          };
+          cell.appendChild(scoreButton);
+        });
+
+        // 합계 셀
+        const totalCell = row.insertCell();
+        totalCell.textContent = team.total;
+      });
+    }
+
+    // Firebase 데이터 변경 시 실시간으로 테이블 업데이트
+    function updateTable() {
+      onValue(teamsRef, (snapshot) => {
+        if (snapshot.exists()) {
+          const data = snapshot.val();
+          renderTable(data);
+        } else {
+          console.log("Firebase에 팀 데이터가 없습니다.");
+        }
+      });
+    }
+
+    // 순위 헤더 클릭 시 manualSort 활성화 및 정렬 순서 토글
+    document.getElementById("rankHeader").addEventListener("click", () => {
+      if (!manualSort) {
+        manualSort = true;
+        sortOrder = "asc";
+      } else {
+        sortOrder = (sortOrder === "asc") ? "desc" : "asc";
+      }
+      get(teamsRef).then(snapshot => {
+        if (snapshot.exists()) {
+          renderTable(snapshot.val());
+        }
+      });
+    });
+
+    // 초기화 버튼: 비밀번호 "4787" 확인 후 팀 데이터 초기화
+    document.getElementById("resetButton").addEventListener("click", async () => {
+      const pwd = prompt("초기화를 위한 비밀번호를 입력하세요:");
+      if (pwd !== "4787") {
+        alert("비밀번호가 틀렸습니다.");
+        return;
+      }
+      if (confirm("정말 데이터를 초기화하시겠습니까?")) {
+        await initializeTeams();
+      }
+    });
+
+    // DOMContentLoaded 시 Firebase에 팀 데이터가 없으면 초기화 후 실시간 업데이트 시작
+    document.addEventListener("DOMContentLoaded", async () => {
+      const teamsSnapshot = await get(teamsRef);
+      if (!teamsSnapshot.exists()) {
+        await initializeTeams();
+      }
+      updateTable();
+    });
+  </script>
+</body>
+</html>
